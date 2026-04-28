@@ -22,7 +22,7 @@ const fetchWithTimeout = async (url, options = {}) => {
 };
 
 // ── sendCommand ───────────────────────────────────────────────
-// command: 'start' | 'stop' | 'reset_system'
+// command: 'start' | 'stop' | 'reset_baseline'
 // data:    optional extra fields (currently unused)
 export const sendCommand = async (command, data = {}) => {
   try {

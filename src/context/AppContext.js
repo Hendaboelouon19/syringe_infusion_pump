@@ -9,8 +9,8 @@ export const AppProvider = ({ children }) => {
   const [patientInfo, setPatientInfo] = useState('');
 
   // ── Option 1 Mode ─────────────────────────────────────────────
-  const [volume,   setVolume]   = useState('');
-  const [flowRate, setFlowRate] = useState('');
+  const [volume,   setVolume]   = useState('10');
+  const [flowRate, setFlowRate] = useState('36.0');
 
   // ── Option 2 Mode ─────────────────────────────────────────────
   const [dose,          setDose]          = useState('');
@@ -45,7 +45,7 @@ export const AppProvider = ({ children }) => {
         const v = parseFloat(volume);
         const f = parseFloat(flowRate);
         if (!isNaN(v) && !isNaN(f) && f > 0) {
-          const seconds = Math.floor((v / f) * 60);
+          const seconds = Math.round((v / f) * 60);
           setTimeRemaining(seconds);
           setTotalTime(seconds);
           setCalculatedFlowRate(f);
@@ -61,7 +61,7 @@ export const AppProvider = ({ children }) => {
         if (!isNaN(d) && !isNaN(c) && !isNaN(t) && c > 0 && t > 0) {
           const v = d / c;
           const f = v / t;
-          const seconds = Math.floor(t * 60);
+          const seconds = Math.round(t * 60);
           setTimeRemaining(seconds);
           setTotalTime(seconds);
           setCalculatedFlowRate(f);
@@ -171,7 +171,7 @@ export const AppProvider = ({ children }) => {
   const dismissAlarm = async () => {
     // If syringe empty — reset on ESP32
     if (syringeEmpty) {
-      await sendCommand('reset_system');
+      await sendCommand('reset_baseline');
       // We don't force syringeEmpty to false here; 
       // let the next poll from ESP32 determine its true state.
     }

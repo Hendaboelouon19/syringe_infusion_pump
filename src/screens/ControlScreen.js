@@ -47,9 +47,13 @@ export default function ControlScreen({ navigation }) {
       return newSpeed;
     });
   };
+  const setMaxFlow = () => {
+    const maxFlow = calFlow[calFlow.length - 1];
+    setFlowRate(maxFlow.toString());
+  };
 
-  const calFlow = [41.88, 46.82, 47.19, 49.00, 51.72, 59.55, 66.37];
-  const calSpeed = [165, 175, 185, 195, 205, 245, 255];
+  const calFlow = [28.57, 30.00, 32.97, 36.36, 38.46, 41.96, 47.62];
+  const calSpeed = [165, 180, 195, 210, 225, 240, 255];
 
   const calculateSpeed = (targetFlow) => {
     if (!targetFlow) return 0;
@@ -63,7 +67,7 @@ export default function ControlScreen({ navigation }) {
         return Math.round(speed);
       }
     }
-    return 205;
+    return 210;
   };
 
   const uiTargetSpeed = calculateSpeed(calculatedFlowRate);
@@ -122,13 +126,18 @@ export default function ControlScreen({ navigation }) {
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Flow Rate (ml/min)</Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>Flow Rate (ml/min)</Text>
+                  <TouchableOpacity onPress={setMaxFlow}>
+                    <Text style={styles.maxBtnText}>SET MAX (47.62)</Text>
+                  </TouchableOpacity>
+                </View>
                 <TextInput 
                   style={styles.input} 
                   keyboardType="numeric" 
                   value={flowRate} 
                   onChangeText={setFlowRate} 
-                  placeholder="e.g. 1.5" 
+                  placeholder="e.g. 36.0" 
                   placeholderTextColor={colors.textSecondary}
                   editable={!isInfusing}
                 />
@@ -265,7 +274,9 @@ const styles = StyleSheet.create({
 
   card: { width: '100%', backgroundColor: colors.surface, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: colors.border, marginBottom: 20 },
   inputGroup: { marginBottom: 20 },
-  label: { fontSize: 14, color: colors.primary, marginBottom: 8, fontWeight: 'bold' },
+  labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  label: { fontSize: 14, color: colors.primary, fontWeight: 'bold' },
+  maxBtnText: { fontSize: 12, color: colors.accent, fontWeight: 'bold', textDecorationLine: 'underline' },
   
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 15, fontSize: 18, color: colors.textPrimary, backgroundColor: '#f9f9f9' },
   
