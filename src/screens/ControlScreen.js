@@ -52,6 +52,11 @@ export default function ControlScreen({ navigation }) {
     setFlowRate(maxFlow.toString());
   };
 
+  const setMinFlow = () => {
+    const minFlow = calFlow[0];
+    setFlowRate(minFlow.toString());
+  };
+
   const calFlow = [28.57, 30.00, 32.97, 36.36, 38.46, 41.96, 47.62];
   const calSpeed = [165, 180, 195, 210, 225, 240, 255];
 
@@ -128,9 +133,14 @@ export default function ControlScreen({ navigation }) {
               <View style={styles.inputGroup}>
                 <View style={styles.labelRow}>
                   <Text style={styles.label}>Flow Rate (ml/min)</Text>
-                  <TouchableOpacity onPress={setMaxFlow}>
-                    <Text style={styles.maxBtnText}>SET MAX (47.62)</Text>
-                  </TouchableOpacity>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity onPress={setMinFlow}>
+                      <Text style={styles.minBtnText}>SET MIN (28.57)</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={setMaxFlow}>
+                      <Text style={styles.maxBtnText}>SET MAX (47.62)</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <TextInput 
                   style={styles.input} 
@@ -277,6 +287,7 @@ const styles = StyleSheet.create({
   labelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   label: { fontSize: 14, color: colors.primary, fontWeight: 'bold' },
   maxBtnText: { fontSize: 12, color: colors.accent, fontWeight: 'bold', textDecorationLine: 'underline' },
+  minBtnText: { fontSize: 12, color: colors.secondary, fontWeight: 'bold', textDecorationLine: 'underline' },
   
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 15, fontSize: 18, color: colors.textPrimary, backgroundColor: '#f9f9f9' },
   
