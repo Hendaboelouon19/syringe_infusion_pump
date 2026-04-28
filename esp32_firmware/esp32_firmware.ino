@@ -199,7 +199,7 @@ void handleControl() {
   }
 
   // ===== RESET SYSTEM =====
-  else if (body.indexOf("reset_baseline") != -1) {
+  else if (body.indexOf("reset_system") != -1) {
     resetSystemState();
     server.send(200, "application/json", "{\"success\":true,\"action\":\"reset\"}");
   }
@@ -215,10 +215,7 @@ void handleSensors() {
   json += "\"flowRate\":" + String(flowRate, 2) + ",";
   json += "\"targetFlowRate\":" + String(targetFlowRate, 2) + ",";
   json += "\"targetSpeed\":" + String(targetSpeed) + ",";
-  json += "\"ratio\":1.000,";
-  json += "\"occlusion\":false,";
   json += "\"syringeEmpty\":" + String(syringeEmpty ? "true" : "false") + ",";
-  json += "\"baselineCaptured\":false,";
   json += "\"motorRunning\":" + String(motorRunning ? "true" : "false") + ",";
   json += "\"direction\":\"" + String(currentDirection) + "\"";
   json += "}";

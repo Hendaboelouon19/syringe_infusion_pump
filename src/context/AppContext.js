@@ -171,7 +171,7 @@ export const AppProvider = ({ children }) => {
   const dismissAlarm = async () => {
     // If syringe empty — reset on ESP32
     if (syringeEmpty) {
-      await sendCommand('reset_baseline');
+      await sendCommand('reset_system');
       // We don't force syringeEmpty to false here; 
       // let the next poll from ESP32 determine its true state.
     }
