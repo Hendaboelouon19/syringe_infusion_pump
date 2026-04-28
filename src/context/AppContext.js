@@ -28,12 +28,8 @@ export const AppProvider = ({ children }) => {
 
   // ── ESP32 live sensor state ───────────────────────────────────
   const [esp32FlowRate,      setEsp32FlowRate]      = useState(0);
-  const [esp32BaselineFlow,  setEsp32BaselineFlow]   = useState(0);
-  const [esp32Ratio,         setEsp32Ratio]          = useState(1);
   const [targetSpeed,        setTargetSpeed]         = useState(0); // Fetched from firmware
-  const [occlusionDetected,  setOcclusionDetected]   = useState(false);
   const [syringeEmpty,        setSyringeEmpty]        = useState(false);
-  const [baselineCaptured,   setBaselineCaptured]    = useState(false);
   const [esp32Connected,     setEsp32Connected]      = useState(false); // true = reachable
   const [hardwareDirection,  setHardwareDirection]   = useState('S'); // 'F', 'R', 'S'
   const [manualPolling,      setManualPolling]       = useState(false); // Manual trigger for polling
@@ -112,22 +108,11 @@ export const AppProvider = ({ children }) => {
 
     // Update live sensor state
     setEsp32FlowRate(data.flowRate     ?? 0);
-    setEsp32BaselineFlow(data.baselineFlow ?? 0);
-    setEsp32Ratio(data.ratio           ?? 1);
     setTargetSpeed(data.targetSpeed    ?? 0);
-    setBaselineCaptured(data.baselineCaptured ?? false);
     setSyringeEmpty(data.syringeEmpty         ?? false);
     setHardwareDirection(data.direction       ?? 'S');
 
-    // ── Occlusion alarm ─────────────────────────────────────────
-    if (data.occlusion && !occlusionDetected) {
-      setOcclusionDetected(true);
-      setAlarmActive(true);
-      setIsInfusing(false); // Stop countdown; motor already stopped by firmware
-      console.warn('[ESP32] OCCLUSION DETECTED → stopping infusion');
-    } else if (!data.occlusion) {
-      setOcclusionDetected(false);
-    }
+    // Occlusion alarm removed
 
     // ── Syringe Empty alarm ─────────────────────────────────────
     if (data.syringeEmpty && !syringeEmpty) {
@@ -138,7 +123,7 @@ export const AppProvider = ({ children }) => {
     } else {
       setSyringeEmpty(data.syringeEmpty ?? false);
     }
-  }, [occlusionDetected, syringeEmpty, isInfusing]); // Added isInfusing to dependencies for safety
+  }, [syringeEmpty, isInfusing]); // Added isInfusing to dependencies for safety
 
   useEffect(() => {
     let pollInterval = null;
@@ -163,7 +148,6 @@ export const AppProvider = ({ children }) => {
     } else {
       setEsp32Connected(true);
     }
-    setOcclusionDetected(false);
     setSyringeEmpty(false);
     setIsInfusing(true);
   };
@@ -180,19 +164,14 @@ export const AppProvider = ({ children }) => {
     setAlarmActive(false);
     setTimeRemaining(0);
     setTotalTime(1);
-    setOcclusionDetected(false);
     setSyringeEmpty(false);
     setEsp32FlowRate(0);
-    setEsp32BaselineFlow(0);
-    setEsp32Ratio(1);
-    setBaselineCaptured(false);
   };
 
   const dismissAlarm = async () => {
-    // If occlusion — reset baseline on ESP32 so it can restart monitoring
-    if (occlusionDetected || syringeEmpty) {
+    // If syringe empty — reset on ESP32
+    if (syringeEmpty) {
       await sendCommand('reset_baseline');
-      setOcclusionDetected(false);
       // We don't force syringeEmpty to false here; 
       // let the next poll from ESP32 determine its true state.
     }
@@ -219,11 +198,7 @@ export const AppProvider = ({ children }) => {
       startInfusion, stopInfusion, resetApp, dismissAlarm,
       // ESP32 live data
       esp32FlowRate,
-      esp32BaselineFlow,
-      esp32Ratio,
-      occlusionDetected,
       syringeEmpty,
-      baselineCaptured,
       esp32Connected,
       hardwareDirection,
       targetSpeed,

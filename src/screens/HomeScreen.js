@@ -10,7 +10,7 @@ const SPACING = (width - ITEM_WIDTH) / 2;
 const CAROUSEL_DATA = [
   { id: '1', title: 'Infusion Config', desc: 'Set drug dose and calculate optimal motor flow rate automatically.', icon: 'water', screen: 'Control', iconBg: colors.primary },
   { id: '2', title: 'Countdown', desc: 'Auto-calculating descending hourglass synced directly to motor flow.', icon: 'hourglass', screen: 'Timer', iconBg: colors.accent },
-  { id: '3', title: 'Alarms', desc: 'Monitor occlusion blockages and empty syringe hardware detection.', icon: 'warning', screen: 'Alarms', iconBg: colors.danger },
+  { id: '3', title: 'Alarms', desc: 'Monitor hardware events like empty syringe detection and controller status.', icon: 'warning', screen: 'Alarms', iconBg: colors.danger },
   { id: '4', title: 'Manual Override', desc: 'Directly control motor speed, forward, and reverse directions.', icon: 'game-controller', screen: 'Manual', iconBg: colors.success ?? '#27ae60' },
 ];
 

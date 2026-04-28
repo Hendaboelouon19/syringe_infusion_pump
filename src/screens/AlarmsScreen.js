@@ -7,21 +7,18 @@ import { sendCommand } from '../services/esp32Service';
 
 export default function AlarmsScreen({ navigation }) {
   const {
-    occlusionDetected,
     esp32Connected,
     isInfusing,
     dismissAlarm,
     alarmActive,
     esp32FlowRate,
-    esp32BaselineFlow,
-    esp32Ratio,
     syringeEmpty,
   } = useContext(AppContext);
 
   // Pulsing animation for active alarms
   const pulseAnim = new Animated.Value(1);
   useEffect(() => {
-    if (occlusionDetected || syringeEmpty || (!esp32Connected && isInfusing)) {
+    if (syringeEmpty || (!esp32Connected && isInfusing)) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.04, duration: 600, useNativeDriver: true }),
@@ -29,20 +26,9 @@ export default function AlarmsScreen({ navigation }) {
         ])
       ).start();
     }
-  }, [occlusionDetected, syringeEmpty, esp32Connected, isInfusing]);
+  }, [syringeEmpty, esp32Connected, isInfusing]);
 
   const alarms = [
-    {
-      id: 'occlusion',
-      title: 'Occlusion Detected',
-      icon: 'warning',
-      desc: 'Flow dropped below 60% of baseline — tube may be blocked.',
-      active: occlusionDetected,
-      // Detail line shown when active
-      detail: occlusionDetected
-        ? `Flow: ${esp32FlowRate.toFixed(3)} ml/min  |  Baseline: ${esp32BaselineFlow.toFixed(3)} ml/min  |  Ratio: ${(esp32Ratio * 100).toFixed(1)}%`
-        : null,
-    },
     {
       id: 'connection',
       title: 'ESP32 Connection Lost',
@@ -93,7 +79,7 @@ export default function AlarmsScreen({ navigation }) {
         </View>
 
         {/* Dismiss button for active alarms */}
-        {(item.id === 'occlusion' || item.id === 'empty') && item.active && (
+        {item.id === 'empty' && item.active && (
           <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss}>
             <Ionicons name="refresh" size={18} color={colors.danger} style={{ marginRight: 6 }} />
             <Text style={styles.dismissText}>Reset & Resume</Text>
@@ -139,21 +125,6 @@ export default function AlarmsScreen({ navigation }) {
             <View style={styles.liveStat}>
               <Text style={styles.liveValue}>{esp32FlowRate.toFixed(3)}</Text>
               <Text style={styles.liveLabel}>ml/min (live)</Text>
-            </View>
-            <View style={styles.liveDivider} />
-            <View style={styles.liveStat}>
-              <Text style={styles.liveValue}>{esp32BaselineFlow.toFixed(3)}</Text>
-              <Text style={styles.liveLabel}>ml/min (baseline)</Text>
-            </View>
-            <View style={styles.liveDivider} />
-            <View style={styles.liveStat}>
-              <Text style={[
-                styles.liveValue,
-                esp32Ratio < 0.6 ? { color: colors.danger } : {}
-              ]}>
-                {(esp32Ratio * 100).toFixed(1)}%
-              </Text>
-              <Text style={styles.liveLabel}>ratio</Text>
             </View>
           </View>
         </View>

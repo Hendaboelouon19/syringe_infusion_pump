@@ -24,19 +24,13 @@ volatile int pulseCount = 0;
 
 // ===== State Variables =====
 float flowRate = 0.0f;       // smoothed ml/min
-float baselineFlow = 0.0f;   // ml/min
-float ratio = 1.0f;
 float targetFlowRate = 51.5f;
 int targetSpeed = 205;
 
-bool baselineCaptured = false;
-bool occlusionDetected = false;
 bool motorRunning = false;
 bool isManualMode = false;
 bool syringeEmpty = false;
 char currentDirection = 'S';
-
-const float THRESHOLD_RATIO = 0.60f;
 
 WebServer server(80);
 
@@ -124,11 +118,7 @@ void motorOff() {
 }
 
 // =====================================================
-void resetOcclusionData() {
-  occlusionDetected = false;
-  baselineCaptured = false;
-  baselineFlow = 0.0f;
-  ratio = 1.0f;
+void resetSystemState() {
   syringeEmpty = (digitalRead(STOP_BUTTON_PIN) == LOW);
 }
 
@@ -183,7 +173,7 @@ void handleControl() {
 
   // ===== START / FLOW UPDATE =====
   if (body.indexOf("start") != -1 || body.indexOf("flowRate") != -1) {
-    if (body.indexOf("start") != -1) resetOcclusionData();
+    if (body.indexOf("start") != -1) resetSystemState();
     
     float requestedFlow = extractFloatValue(body, "flowRate", targetFlowRate);
     motorOnWithFlow(requestedFlow);
@@ -200,8 +190,6 @@ void handleControl() {
   // ===== MANUAL MODE =====
   else if (body.indexOf("manual") != -1) {
     isManualMode = true;
-    occlusionDetected = false;
-    baselineCaptured = false;
     
     char dir = extractDirection(body);
     int speedValue = extractIntValue(body, "speed", 255); // Use raw speed, default 255
@@ -210,9 +198,9 @@ void handleControl() {
     server.send(200, "application/json", "{\"success\":true,\"action\":\"manual\"}");
   }
 
-  // ===== RESET BASELINE =====
+  // ===== RESET SYSTEM =====
   else if (body.indexOf("reset_baseline") != -1) {
-    resetOcclusionData();
+    resetSystemState();
     server.send(200, "application/json", "{\"success\":true,\"action\":\"reset\"}");
   }
 
@@ -227,10 +215,10 @@ void handleSensors() {
   json += "\"flowRate\":" + String(flowRate, 2) + ",";
   json += "\"targetFlowRate\":" + String(targetFlowRate, 2) + ",";
   json += "\"targetSpeed\":" + String(targetSpeed) + ",";
-  json += "\"ratio\":" + String(ratio, 3) + ",";
-  json += "\"occlusion\":" + String(occlusionDetected ? "true" : "false") + ",";
+  json += "\"ratio\":1.000,";
+  json += "\"occlusion\":false,";
   json += "\"syringeEmpty\":" + String(syringeEmpty ? "true" : "false") + ",";
-  json += "\"baselineCaptured\":" + String(baselineCaptured ? "true" : "false") + ",";
+  json += "\"baselineCaptured\":false,";
   json += "\"motorRunning\":" + String(motorRunning ? "true" : "false") + ",";
   json += "\"direction\":\"" + String(currentDirection) + "\"";
   json += "}";
@@ -298,20 +286,6 @@ void loop() {
 
     float instantFlow = (float)pulses / CALIBRATION_FACTOR;
     flowRate = (flowRate * 0.85f) + (instantFlow * 0.15f);
-
-    if (motorRunning && !isManualMode) {
-      if (!baselineCaptured && flowRate > 1.0f) {
-        baselineFlow = flowRate;
-        baselineCaptured = true;
-      }
-      if (baselineCaptured) {
-        ratio = flowRate / baselineFlow;
-        if (ratio < THRESHOLD_RATIO) {
-          occlusionDetected = true;
-          motorOff();
-          Serial.println("OCCLUSION DETECTED");
-        }
-      }
-    }
+    // Occlusion detection removed.
   }
 }

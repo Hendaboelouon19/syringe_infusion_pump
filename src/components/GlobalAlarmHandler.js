@@ -75,7 +75,7 @@ export default function GlobalAlarmHandler() {
             <View style={styles.textContainer}>
               <Text style={styles.title}>CRITICAL ALARM</Text>
               <Text style={styles.subtitle}>
-                {syringeEmpty ? 'SYRINGE EMPTY / STOP TRIGGERED' : 'OCCLUSION DETECTED'}
+                {syringeEmpty ? 'SYRINGE EMPTY / STOP TRIGGERED' : 'INFUSION COMPLETE'}
               </Text>
             </View>
           </View>
@@ -84,7 +84,7 @@ export default function GlobalAlarmHandler() {
              <Text style={styles.detailsText}>
                {syringeEmpty 
                  ? 'The hardware limit switch has been triggered. The system has stopped for safety.' 
-                 : 'Flow blockage detected. Please check the tubing and reset.'}
+                 : 'The target volume has been delivered or the timer has finished.'}
              </Text>
           </View>
           

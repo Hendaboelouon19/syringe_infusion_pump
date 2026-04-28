@@ -44,7 +44,7 @@ export const sendCommand = async (command, data = {}) => {
 
 // ── fetchSensors ──────────────────────────────────────────────
 // Returns:
-//   { flowRate, baselineFlow, ratio, occlusion, baselineCaptured, motorRunning }
+//   { flowRate, syringeEmpty, motorRunning, direction, ... }
 // Returns null on network error.
 export const fetchSensors = async () => {
   try {

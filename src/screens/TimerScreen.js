@@ -11,19 +11,17 @@ export default function TimerScreen({ navigation }) {
     timeRemaining, totalTime,
     isInfusing, stopInfusion, startInfusion,
     alarmActive, dismissAlarm,
-    occlusionDetected,
     syringeEmpty,
     esp32FlowRate, calculatedFlowRate,
-    baselineCaptured, esp32Connected,
-    esp32Ratio,
+    esp32Connected,
   } = useContext(AppContext);
 
   const [sound, setSound] = useState(null);
 
-  // Occlusion flash animation
+  // Flash animation for syringe empty
   const flashAnim = new Animated.Value(0);
   useEffect(() => {
-    if (occlusionDetected || syringeEmpty) {
+    if (syringeEmpty) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(flashAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
@@ -33,9 +31,9 @@ export default function TimerScreen({ navigation }) {
     } else {
       flashAnim.setValue(0);
     }
-  }, [occlusionDetected, syringeEmpty]);
+  }, [syringeEmpty]);
 
-  const occlusionBg = flashAnim.interpolate({
+  const alarmBg = flashAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['rgba(220,53,69,0)', 'rgba(220,53,69,0.18)'],
   });
@@ -63,10 +61,9 @@ export default function TimerScreen({ navigation }) {
   const targetFlow = calculatedFlowRate; // ml/min from config
   // ESP32 sends ml/min directly
   const liveMlMin = esp32FlowRate;
-  const flowDiff = baselineCaptured ? (liveMlMin - targetFlow) : null;
 
   return (
-    <Animated.View style={[styles.container, (occlusionDetected || syringeEmpty) && { backgroundColor: occlusionBg }]}>
+    <Animated.View style={[styles.container, syringeEmpty && { backgroundColor: alarmBg }]}>
       <View style={styles.container}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color={colors.white} />
@@ -78,7 +75,7 @@ export default function TimerScreen({ navigation }) {
           <Text style={styles.subtitle}>Time until completion</Text>
         </View>
 
-        {/* Connection + occlusion banner */}
+        {/* Connection + alarm banner */}
         {(isInfusing || alarmActive) && (
           <View style={styles.statusRow}>
             {/* ESP32 connection badge */}
@@ -94,17 +91,10 @@ export default function TimerScreen({ navigation }) {
               </Text>
             </View>
 
-            {/* Occlusion warning banner */}
-            {occlusionDetected && (
-              <View style={styles.occlusionBadge}>
-                <Ionicons name="warning" size={14} color={colors.white} style={{ marginRight: 4 }} />
-                <Text style={styles.badgeText}>OCCLUSION</Text>
-              </View>
-            )}
 
             {/* Syringe Empty warning banner */}
             {syringeEmpty && (
-              <View style={styles.occlusionBadge}>
+              <View style={styles.alarmBadge}>
                 <Ionicons name="medical" size={14} color={colors.white} style={{ marginRight: 4 }} />
                 <Text style={styles.badgeText}>SYRINGE EMPTY</Text>
               </View>
@@ -138,16 +128,6 @@ export default function TimerScreen({ navigation }) {
               </Text>
               <Text style={styles.liveLabel}>ml/min (target)</Text>
             </View>
-            <View style={styles.liveDivider} />
-            <View style={styles.liveStat}>
-              <Text style={[
-                styles.liveValue,
-                esp32Ratio < 0.6 ? { color: colors.danger } : { color: colors.success ?? '#27ae60' }
-              ]}>
-                {(esp32Ratio * 100).toFixed(0)}%
-              </Text>
-              <Text style={styles.liveLabel}>ratio</Text>
-            </View>
           </View>
         )}
 
@@ -180,7 +160,7 @@ const styles = StyleSheet.create({
   badge:          { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
   badgeOn:        { backgroundColor: '#27ae60' },
   badgeOff:       { backgroundColor: '#666' },
-  occlusionBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.danger },
+  alarmBadge:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: colors.danger },
   badgeText:      { color: colors.white, fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
 
   hourglassWrapper: { width: 200, height: 280, justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
