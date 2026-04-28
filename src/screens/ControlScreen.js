@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { colors } from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,10 +10,18 @@ export default function ControlScreen({ navigation }) {
     mode, setMode,
     volume, setVolume, flowRate, setFlowRate,
     dose, setDose, concentration, setConcentration, targetTime, setTargetTime,
-    calculatedFlowRate, timeRemaining, startInfusion, isInfusing 
+    calculatedFlowRate, timeRemaining, startInfusion, isInfusing,
+    esp32Connected, targetSpeed, setManualPolling, hardwareDirection
   } = useContext(AppContext);
 
-  const motorSpeed = calculatedFlowRate ? (calculatedFlowRate * 7.5).toFixed(0) : 0;
+  const [activeDirection, setActiveDirection] = useState('S');
+  const [manualSpeed, setManualSpeed] = useState(255); // Default to max for quick prime/retract
+
+  // Keep polling active while on this unified control screen
+  React.useEffect(() => {
+    setManualPolling(true);
+    return () => setManualPolling(false);
+  }, [setManualPolling]);
 
   const handleStart = async () => {
     if (timeRemaining > 0) {
@@ -23,12 +31,53 @@ export default function ControlScreen({ navigation }) {
     }
   };
 
+  const handleManualCommand = async (direction) => {
+    if (!esp32Connected) {
+      console.warn("Cannot send manual command. ESP32 Offline.");
+    }
+    setActiveDirection(direction);
+    await sendCommand('manual', { direction, speed: manualSpeed });
+  };
+
+  const adjustManualSpeed = (amount) => {
+    setManualSpeed((prev) => {
+      const newSpeed = prev + amount;
+      if (newSpeed > 255) return 255;
+      if (newSpeed < 0) return 0;
+      return newSpeed;
+    });
+  };
+
+  const calFlow = [41.88, 46.82, 47.19, 49.00, 51.72, 59.55, 66.37];
+  const calSpeed = [165, 175, 185, 195, 205, 245, 255];
+
+  const calculateSpeed = (targetFlow) => {
+    if (!targetFlow) return 0;
+    if (targetFlow <= calFlow[0]) return calSpeed[0];
+    if (targetFlow >= calFlow[calFlow.length - 1]) return calSpeed[calSpeed.length - 1];
+
+    for (let i = 0; i < calFlow.length - 1; i++) {
+      if (targetFlow >= calFlow[i] && targetFlow <= calFlow[i + 1]) {
+        const r = (targetFlow - calFlow[i]) / (calFlow[i + 1] - calFlow[i]);
+        const speed = calSpeed[i] + r * (calSpeed[i + 1] - calSpeed[i]);
+        return Math.round(speed);
+      }
+    }
+    return 205;
+  };
+
+  const uiTargetSpeed = calculateSpeed(calculatedFlowRate);
+
   const formatTime = (seconds) => {
     if (seconds <= 0) return '0h 0m';
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     return `${hrs}h ${mins}m`;
   };
+
+  const isForward = activeDirection === 'F';
+  const isReverse = activeDirection === 'R';
+  const isStopped = activeDirection === 'S';
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
@@ -44,18 +93,16 @@ export default function ControlScreen({ navigation }) {
         {/* Toggle Mode */}
         <View style={styles.toggleContainer}>
           <TouchableOpacity 
-            style={[styles.toggleBtn, mode === 'Option1' && styles.toggleActive]} 
+            style={[styles.toggleBtn, mode === 'Option1' && styles.toggleActive]}
             onPress={() => setMode('Option1')}
-            disabled={isInfusing}
           >
-            <Text style={[styles.toggleText, mode === 'Option1' && styles.toggleTextActive]}>Direct Input</Text>
+            <Text style={[styles.toggleText, mode === 'Option1' && styles.toggleTextActive]}>Volume & Flow</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.toggleBtn, mode === 'Option2' && styles.toggleActive]} 
+            style={[styles.toggleBtn, mode === 'Option2' && styles.toggleActive]}
             onPress={() => setMode('Option2')}
-            disabled={isInfusing}
           >
-            <Text style={[styles.toggleText, mode === 'Option2' && styles.toggleTextActive]}>Dose Calc</Text>
+            <Text style={[styles.toggleText, mode === 'Option2' && styles.toggleTextActive]}>Dose & Time</Text>
           </TouchableOpacity>
         </View>
 
@@ -63,7 +110,7 @@ export default function ControlScreen({ navigation }) {
           {mode === 'Option1' ? (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Volume (ml)</Text>
+                <Text style={styles.label}>Total Volume (ml)</Text>
                 <TextInput 
                   style={styles.input} 
                   keyboardType="numeric" 
@@ -135,10 +182,56 @@ export default function ControlScreen({ navigation }) {
             <Text style={styles.ringLabel}>ml/min</Text>
             {mode === 'Option2' && <Text style={styles.ringLabelTime}>Time: {formatTime(timeRemaining)}</Text>}
           </View>
-          
           <View style={styles.motorStatus}>
-            <Ionicons name="settings" size={24} color={motorSpeed > 0 ? colors.accent : colors.textSecondary} />
-            <Text style={styles.motorText}>Calculated Speed: {motorSpeed || 0} RPM</Text>
+            <Ionicons name="hardware-chip" size={24} color={esp32Connected ? colors.success : colors.textSecondary} />
+            <Text style={styles.motorText}>
+              {esp32Connected ? `Pump Online - ${uiTargetSpeed} RPM [${hardwareDirection === 'F' ? 'FORWARD' : hardwareDirection === 'R' ? 'REVERSE' : 'STOP'}]` : 'Pump Offline'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Manual Overrides on Same Tab */}
+        <View style={styles.directionPanel}>
+          <Text style={styles.sectionLabel}>MANUAL OVERRIDE (Independent Speed)</Text>
+          
+          {/* Manual Speed Stepper */}
+          <View style={styles.manualSpeedRow}>
+             <Text style={styles.manualSpeedLabel}>Manual PWM Speed (0-255):</Text>
+             <View style={styles.stepper}>
+                <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustManualSpeed(-15)}>
+                   <Ionicons name="remove" size={20} color={colors.white} />
+                </TouchableOpacity>
+                <Text style={styles.stepperValue}>{manualSpeed}</Text>
+                <TouchableOpacity style={styles.stepperBtn} onPress={() => adjustManualSpeed(15)}>
+                   <Ionicons name="add" size={20} color={colors.white} />
+                </TouchableOpacity>
+             </View>
+          </View>
+
+          <View style={styles.dirRow}>
+            <TouchableOpacity
+              style={[styles.dirBtn, styles.forwardBtn, isForward && styles.activeForward]}
+              onPress={() => handleManualCommand('F')}
+            >
+              <Ionicons name="arrow-up" size={24} color={isForward ? colors.white : colors.primary} />
+              <Text style={[styles.dirText, isForward && styles.activeText]}>Prime</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dirBtn, styles.stopBtn, isStopped && styles.activeStop]}
+              onPress={() => handleManualCommand('S')}
+            >
+              <Ionicons name="square" size={24} color={isStopped ? colors.white : colors.danger} />
+              <Text style={[styles.dirText, isStopped && styles.activeText, { color: isStopped ? colors.white : colors.danger }]}>Stop</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.dirBtn, styles.reverseBtn, isReverse && styles.activeReverse]}
+              onPress={() => handleManualCommand('R')}
+            >
+              <Ionicons name="arrow-down" size={24} color={isReverse ? colors.white : colors.accent} />
+              <Text style={[styles.dirText, isReverse && styles.activeText]}>Retract</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -174,19 +267,42 @@ const styles = StyleSheet.create({
   inputGroup: { marginBottom: 20 },
   label: { fontSize: 14, color: colors.primary, marginBottom: 8, fontWeight: 'bold' },
   
-  // Notice text color is now properly dark to be seen on the light background
   input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 15, fontSize: 18, color: colors.textPrimary, backgroundColor: '#f9f9f9' },
   
   dashboard: { alignItems: 'center', marginVertical: 10 },
-  glowRing: { width: 180, height: 180, borderRadius: 90, borderWidth: 2, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, shadowColor: colors.accent, shadowOffset: {width:0,height:0}, shadowRadius: 20, shadowOpacity: 0.8, elevation: 10, marginBottom: 20 },
-  ringValue: { fontSize: 32, fontWeight: 'bold', color: colors.textPrimary, textAlign: 'center' },
-  ringLabel: { fontSize: 16, color: colors.primary, marginTop: 5, fontWeight: 'bold' },
-  ringLabelTime: { fontSize: 14, color: colors.secondary, marginTop: 5 },
-
-  motorStatus: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
-  motorText: { marginLeft: 10, fontSize: 16, fontWeight: '600', color: colors.textPrimary },
+  glowRing: { width: 160, height: 160, borderRadius: 80, backgroundColor: colors.surface, borderWidth: 4, borderColor: colors.primary, justifyContent: 'center', alignItems: 'center', elevation: 15, shadowColor: colors.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 20 },
+  ringValue: { fontSize: 40, fontWeight: 'bold', color: colors.textPrimary },
+  ringLabel: { fontSize: 14, color: colors.textSecondary, marginTop: 5 },
+  ringLabelTime: { fontSize: 12, color: colors.accent, marginTop: 5, fontWeight: 'bold' },
   
-  startBtn: { flexDirection: 'row', backgroundColor: colors.primary, width: '100%', padding: 20, borderRadius: 15, alignItems: 'center', justifyContent: 'center', elevation: 5, shadowColor: colors.accent, shadowOffset: {width:0,height:0}, shadowRadius: 10, shadowOpacity: 1, marginTop: 10 },
-  startBtnActive: { backgroundColor: '#888' },
+  motorStatus: { flexDirection: 'row', alignItems: 'center', marginTop: 25, backgroundColor: colors.surface, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: colors.border },
+  motorText: { color: colors.textPrimary, fontWeight: 'bold', marginLeft: 10 },
+  
+  startBtn: { backgroundColor: colors.success, padding: 18, borderRadius: 15, alignItems: 'center', width: '100%', flexDirection: 'row', justifyContent: 'center' },
+  startBtnActive: { backgroundColor: colors.danger },
+  startBtnDisabled: { opacity: 0.5 },
   startText: { color: colors.white, fontSize: 18, fontWeight: 'bold' },
+  
+  directionPanel: { width: '100%', marginTop: 10, marginBottom: 20, padding: 15, backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 15 },
+  sectionLabel: { color: colors.white, fontSize: 14, fontWeight: 'bold', marginBottom: 15, alignSelf: 'center', opacity: 0.8 },
+  manualSpeedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 15, paddingHorizontal: 5 },
+  manualSpeedLabel: { color: colors.white, fontSize: 13, opacity: 0.9 },
+  stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 10, borderWidth: 1, borderColor: colors.border },
+  stepperBtn: { padding: 8, backgroundColor: colors.primary, borderRadius: 8 },
+  stepperValue: { color: colors.white, fontWeight: 'bold', width: 40, textAlign: 'center', fontSize: 16 },
+  
+  dirRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  dirBtn: { flex: 1, flexDirection: 'column', alignItems: 'center', backgroundColor: colors.surface, paddingVertical: 15, marginHorizontal: 5, borderRadius: 12, borderWidth: 2, elevation: 2 },
+  dirText: { fontSize: 13, fontWeight: 'bold', marginTop: 8, color: colors.textPrimary },
+  
+  forwardBtn: { borderColor: colors.primary },
+  activeForward: { backgroundColor: colors.primary },
+  
+  reverseBtn: { borderColor: colors.accent },
+  activeReverse: { backgroundColor: colors.accent },
+
+  stopBtn: { borderColor: colors.danger },
+  activeStop: { backgroundColor: colors.danger },
+
+  activeText: { color: colors.white },
 });

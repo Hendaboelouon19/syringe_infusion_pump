@@ -1,70 +1,167 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import React, { useContext, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, Animated } from 'react-native';
 import { colors } from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
+import { AppContext } from '../context/AppContext';
+import { sendCommand } from '../services/esp32Service';
 
 export default function AlarmsScreen({ navigation }) {
-  const [alarms, setAlarms] = useState([
-    { id: '1', title: 'Occlusion Detected', active: false, icon: 'warning', desc: 'Blocked tube or high pressure.' },
-    { id: '2', title: 'Syringe Empty', active: false, icon: 'medical', desc: 'Plunger reached end.' },
-    { id: '3', title: 'Tube Empty', active: false, icon: 'water', desc: 'Flow reading 0 for 30s.' },
-  ]);
-  
-  // This simulates an alarm tripping
-  const handleTestAlarm = (id) => {
-    setAlarms(current => current.map(a => a.id === id ? { ...a, active: true } : a));
-  };
+  const {
+    occlusionDetected,
+    esp32Connected,
+    isInfusing,
+    dismissAlarm,
+    alarmActive,
+    esp32FlowRate,
+    esp32BaselineFlow,
+    esp32Ratio,
+    syringeEmpty,
+  } = useContext(AppContext);
 
-  const handleDismiss = (id) => {
-    setAlarms(current => current.map(a => a.id === id ? { ...a, active: false } : a));
+  // Pulsing animation for active alarms
+  const pulseAnim = new Animated.Value(1);
+  useEffect(() => {
+    if (occlusionDetected || syringeEmpty || (!esp32Connected && isInfusing)) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, { toValue: 1.04, duration: 600, useNativeDriver: true }),
+          Animated.timing(pulseAnim, { toValue: 1.00, duration: 600, useNativeDriver: true }),
+        ])
+      ).start();
+    }
+  }, [occlusionDetected, syringeEmpty, esp32Connected, isInfusing]);
+
+  const alarms = [
+    {
+      id: 'occlusion',
+      title: 'Occlusion Detected',
+      icon: 'warning',
+      desc: 'Flow dropped below 60% of baseline — tube may be blocked.',
+      active: occlusionDetected,
+      // Detail line shown when active
+      detail: occlusionDetected
+        ? `Flow: ${esp32FlowRate.toFixed(3)} ml/min  |  Baseline: ${esp32BaselineFlow.toFixed(3)} ml/min  |  Ratio: ${(esp32Ratio * 100).toFixed(1)}%`
+        : null,
+    },
+    {
+      id: 'connection',
+      title: 'ESP32 Connection Lost',
+      icon: 'wifi',
+      desc: 'Cannot reach the pump controller over WiFi.',
+      active: !esp32Connected && isInfusing,
+      detail: !esp32Connected && isInfusing
+        ? 'Check WiFi and verify ESP32 IP in esp32Service.js'
+        : null,
+    },
+    {
+      id: 'empty',
+      title: 'Syringe Empty',
+      icon: 'medical',
+      desc: 'Plunger reached end. Replace syringe.',
+      active: syringeEmpty,
+      detail: syringeEmpty ? 'Hardware limit switch triggered — motor stopped.' : null,
+    },
+  ];
+
+  const handleDismiss = async () => {
+    await dismissAlarm();
   };
 
   const renderItem = ({ item }) => (
-    <TouchableOpacity 
-      style={[styles.card, item.active && styles.cardActive]} 
-      onPress={() => !item.active && handleTestAlarm(item.id)}
-      activeOpacity={0.9}
-    >
-      <View style={{flexDirection: 'row', alignItems: 'center', width: '100%'}}>
-        <View style={[styles.iconBox, item.active && styles.iconBoxActive]}>
-          <Ionicons name={item.icon} size={28} color={item.active ? colors.white : colors.primary} />
+    <Animated.View style={{ transform: [{ scale: item.active ? pulseAnim : 1 }] }}>
+      <View style={[styles.card, item.active && styles.cardActive]}>
+        <View style={styles.cardRow}>
+          <View style={[styles.iconBox, item.active && styles.iconBoxActive]}>
+            <Ionicons name={item.icon} size={28} color={item.active ? colors.white : colors.primary} />
+          </View>
+
+          <View style={styles.info}>
+            <Text style={[styles.title, item.active && styles.titleActive]}>{item.title}</Text>
+            <Text style={[styles.desc,  item.active && styles.descActive]}>{item.desc}</Text>
+            {item.active && item.detail && (
+              <Text style={styles.detailText}>{item.detail}</Text>
+            )}
+          </View>
+
+          <View style={styles.status}>
+            {item.active ? (
+              <Ionicons name="alert-circle" size={28} color={colors.white} />
+            ) : (
+              <Ionicons name="checkmark-circle" size={28} color={colors.success} />
+            )}
+          </View>
         </View>
-        <View style={styles.info}>
-          <Text style={[styles.title, item.active && styles.titleActive]}>{item.title}</Text>
-          <Text style={[styles.desc, item.active && styles.descActive]}>{item.desc}</Text>
-        </View>
-        <View style={styles.status}>
-          {item.active ? (
-            <Ionicons name="alert-circle" size={28} color={colors.white} />
-          ) : (
-            <Ionicons name="checkmark-circle" size={28} color={colors.success} />
-          )}
-        </View>
+
+        {/* Dismiss button for active alarms */}
+        {(item.id === 'occlusion' || item.id === 'empty') && item.active && (
+          <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss}>
+            <Ionicons name="refresh" size={18} color={colors.danger} style={{ marginRight: 6 }} />
+            <Text style={styles.dismissText}>Reset & Resume</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      
-      {item.active && (
-        <TouchableOpacity style={styles.dismissBtn} onPress={() => handleDismiss(item.id)}>
-           <Ionicons name="refresh" size={18} color={colors.danger} style={{marginRight: 6}} />
-           <Text style={styles.dismissText}>Reset Alarm</Text>
-        </TouchableOpacity>
-      )}
-    </TouchableOpacity>
+    </Animated.View>
   );
+
+  const anyActive = alarms.some((a) => a.active);
 
   return (
     <View style={styles.container}>
       <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-         <Ionicons name="arrow-back" size={28} color={colors.white} />
+        <Ionicons name="arrow-back" size={28} color={colors.white} />
       </TouchableOpacity>
 
       <View style={styles.header}>
         <Text style={styles.headerTitle}>System Alarms</Text>
-        <Text style={styles.headerSubtitle}>Monitor ESP32 Sensors</Text>
+        <Text style={styles.headerSubtitle}>
+          {anyActive ? '⚠️  Action Required' : '✅  All Systems Normal'}
+        </Text>
+
+        {/* Connection badge */}
+        <View style={[styles.badge, esp32Connected ? styles.badgeOn : styles.badgeOff]}>
+          <Ionicons
+            name={esp32Connected ? 'wifi' : 'wifi-outline'}
+            size={14}
+            color={colors.white}
+            style={{ marginRight: 5 }}
+          />
+          <Text style={styles.badgeText}>
+            {esp32Connected ? 'ESP32 Connected' : 'ESP32 Offline'}
+          </Text>
+        </View>
       </View>
 
-      <FlatList 
+      {/* Live flow summary card (shown when infusing and connected) */}
+      {isInfusing && esp32Connected && (
+        <View style={styles.liveCard}>
+          <Text style={styles.liveTitle}>Live Sensor Feed</Text>
+          <View style={styles.liveRow}>
+            <View style={styles.liveStat}>
+              <Text style={styles.liveValue}>{esp32FlowRate.toFixed(3)}</Text>
+              <Text style={styles.liveLabel}>ml/min (live)</Text>
+            </View>
+            <View style={styles.liveDivider} />
+            <View style={styles.liveStat}>
+              <Text style={styles.liveValue}>{esp32BaselineFlow.toFixed(3)}</Text>
+              <Text style={styles.liveLabel}>ml/min (baseline)</Text>
+            </View>
+            <View style={styles.liveDivider} />
+            <View style={styles.liveStat}>
+              <Text style={[
+                styles.liveValue,
+                esp32Ratio < 0.6 ? { color: colors.danger } : {}
+              ]}>
+                {(esp32Ratio * 100).toFixed(1)}%
+              </Text>
+              <Text style={styles.liveLabel}>ratio</Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      <FlatList
         data={alarms}
-        keyExtractor={item => item.id}
+        keyExtractor={(item) => item.id}
         renderItem={renderItem}
         contentContainerStyle={styles.list}
       />
@@ -73,22 +170,38 @@ export default function AlarmsScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  backBtn: { position: 'absolute', top: 50, left: 20, zIndex: 10, padding: 10 },
-  header: { paddingTop: 100, paddingHorizontal: 20, marginBottom: 20, alignItems: 'center' },
-  headerTitle: { fontSize: 32, fontWeight: 'bold', color: colors.white, textShadowColor: '#000', textShadowOffset: {width:0, height:0}, textShadowRadius: 10 },
-  headerSubtitle: { fontSize: 16, color: colors.accent, marginTop: 5 },
-  list: { padding: 20 },
-  card: { backgroundColor: colors.surface, padding: 20, borderRadius: 15, marginBottom: 15, alignItems: 'center', borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOffset: {width:0, height:5}, shadowRadius: 10, shadowOpacity: 0.1, elevation: 5 },
-  cardActive: { backgroundColor: colors.danger, borderColor: colors.danger, shadowColor: colors.danger, shadowOpacity: 0.8 },
-  iconBox: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center', marginRight: 15, borderWidth: 1, borderColor: colors.border },
-  iconBoxActive: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: colors.white },
-  info: { flex: 1 },
-  title: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 4 }, // Fixed to dark
-  titleActive: { color: colors.white, textShadowColor: '#000', textShadowRadius: 5 },
-  desc: { fontSize: 13, color: colors.textSecondary }, // Fixed to darker fade
-  descActive: { color: '#ffeaec' },
-  status: { marginLeft: 10 },
-  dismissBtn: { marginTop: 15, backgroundColor: colors.white, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, flexDirection: 'row', alignItems: 'center', elevation: 2 },
-  dismissText: { color: colors.danger, fontWeight: 'bold' }
+  container:       { flex: 1, backgroundColor: colors.background },
+  backBtn:         { position: 'absolute', top: 50, left: 20, zIndex: 10, padding: 10 },
+  header:          { paddingTop: 100, paddingHorizontal: 20, marginBottom: 10, alignItems: 'center' },
+  headerTitle:     { fontSize: 32, fontWeight: 'bold', color: colors.white },
+  headerSubtitle:  { fontSize: 15, color: colors.accent, marginTop: 5 },
+
+  badge:           { flexDirection: 'row', alignItems: 'center', marginTop: 12, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
+  badgeOn:         { backgroundColor: colors.success ?? '#27ae60' },
+  badgeOff:        { backgroundColor: '#555' },
+  badgeText:       { color: colors.white, fontSize: 13, fontWeight: '600' },
+
+  liveCard:        { marginHorizontal: 20, marginBottom: 10, backgroundColor: colors.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border },
+  liveTitle:       { fontSize: 13, color: colors.primary, fontWeight: '700', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 1 },
+  liveRow:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  liveStat:        { flex: 1, alignItems: 'center' },
+  liveValue:       { fontSize: 20, fontWeight: 'bold', color: colors.textPrimary },
+  liveLabel:       { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  liveDivider:     { width: 1, height: 40, backgroundColor: colors.border },
+
+  list:            { padding: 20 },
+  card:            { backgroundColor: colors.surface, padding: 20, borderRadius: 15, marginBottom: 15, borderWidth: 1, borderColor: colors.border, elevation: 5 },
+  cardActive:      { backgroundColor: colors.danger, borderColor: colors.danger, shadowColor: colors.danger, shadowOpacity: 0.8, elevation: 10 },
+  cardRow:         { flexDirection: 'row', alignItems: 'center', width: '100%' },
+  iconBox:         { width: 50, height: 50, borderRadius: 25, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center', marginRight: 15, borderWidth: 1, borderColor: colors.border },
+  iconBoxActive:   { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: colors.white },
+  info:            { flex: 1 },
+  title:           { fontSize: 17, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 3 },
+  titleActive:     { color: colors.white },
+  desc:            { fontSize: 13, color: colors.textSecondary },
+  descActive:      { color: '#ffeaec' },
+  detailText:      { fontSize: 11, color: 'rgba(255,255,255,0.85)', marginTop: 6, fontFamily: 'monospace' },
+  status:          { marginLeft: 10 },
+  dismissBtn:      { marginTop: 14, backgroundColor: colors.white, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 20, flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', elevation: 2 },
+  dismissText:     { color: colors.danger, fontWeight: 'bold' },
 });
