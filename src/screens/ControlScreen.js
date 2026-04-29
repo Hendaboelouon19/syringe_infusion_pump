@@ -1,17 +1,25 @@
 import React, { useContext, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { colors } from '../theme/colors';
 import { Ionicons } from '@expo/vector-icons';
 import { sendCommand } from '../services/esp32Service';
-import { AppContext } from '../context/AppContext';
+import {
+  AppContext,
+  MIN_FLOW_ML_MIN,
+  MAX_FLOW_ML_MIN,
+  MIN_DRAW_VOL,
+  MAX_DRAW_VOL,
+} from '../context/AppContext';
 
 export default function ControlScreen({ navigation }) {
   const { 
     mode, setMode,
     volume, setVolume, flowRate, setFlowRate,
-    dose, setDose, concentration, setConcentration, targetTime, setTargetTime,
+    dose, setDose, targetTime, setTargetTime,
     calculatedFlowRate, timeRemaining, startInfusion, isInfusing,
-    esp32Connected, targetSpeed, setManualPolling, hardwareDirection
+    esp32Connected, targetSpeed, setManualPolling, hardwareDirection,
+    drawPhase, drawingActive, lastDrawVol,
+    startDraw, cancelDraw, resetDrawPhase,
   } = useContext(AppContext);
 
   const [activeDirection, setActiveDirection] = useState('S');
@@ -57,8 +65,8 @@ export default function ControlScreen({ navigation }) {
     setFlowRate(minFlow.toString());
   };
 
-  const calFlow = [28.57, 30.00, 32.97, 36.36, 38.46, 41.96, 47.62];
-  const calSpeed = [165, 180, 195, 210, 225, 240, 255];
+  const calFlow = [38.71, 43.80, 51.28, 54.55, 56.60, 58.82, 60.00, 61.22, 63.16, 71.43];
+  const calSpeed = [120, 135, 150, 165, 180, 195, 210, 225, 240, 255];
 
   const calculateSpeed = (targetFlow) => {
     if (!targetFlow) return 0;
@@ -135,10 +143,10 @@ export default function ControlScreen({ navigation }) {
                   <Text style={styles.label}>Flow Rate (ml/min)</Text>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
                     <TouchableOpacity onPress={setMinFlow}>
-                      <Text style={styles.minBtnText}>SET MIN (28.57)</Text>
+                      <Text style={styles.minBtnText}>SET MIN (38.71)</Text>
                     </TouchableOpacity>
                     <TouchableOpacity onPress={setMaxFlow}>
-                      <Text style={styles.maxBtnText}>SET MAX (47.62)</Text>
+                      <Text style={styles.maxBtnText}>SET MAX (71.43)</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -147,7 +155,7 @@ export default function ControlScreen({ navigation }) {
                   keyboardType="numeric" 
                   value={flowRate} 
                   onChangeText={setFlowRate} 
-                  placeholder="e.g. 36.0" 
+                  placeholder="e.g. 60.0" 
                   placeholderTextColor={colors.textSecondary}
                   editable={!isInfusing}
                 />
@@ -156,41 +164,65 @@ export default function ControlScreen({ navigation }) {
           ) : (
             <>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Dose (mg)</Text>
+                <Text style={styles.label}>Dose (mL)</Text>
                 <TextInput 
                   style={styles.input} 
                   keyboardType="numeric" 
                   value={dose} 
                   onChangeText={setDose} 
-                  placeholder="e.g. 100" 
+                  placeholder={`${MIN_DRAW_VOL} - ${MAX_DRAW_VOL}`}
                   placeholderTextColor={colors.textSecondary}
-                  editable={!isInfusing}
+                  editable={!isInfusing && drawPhase === 'idle'}
                 />
               </View>
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>Concentration (mg/ml)</Text>
-                <TextInput 
-                  style={styles.input} 
-                  keyboardType="numeric" 
-                  value={concentration} 
-                  onChangeText={setConcentration} 
-                  placeholder="e.g. 5" 
-                  placeholderTextColor={colors.textSecondary}
-                  editable={!isInfusing}
-                />
-              </View>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Target Time (mins)</Text>
+                <Text style={styles.label}>Target Time (sec)</Text>
                 <TextInput 
                   style={styles.input} 
                   keyboardType="numeric" 
                   value={targetTime} 
                   onChangeText={setTargetTime} 
-                  placeholder="e.g. 30" 
+                  placeholder="e.g. 8" 
                   placeholderTextColor={colors.textSecondary}
-                  editable={!isInfusing}
+                  editable={!isInfusing && drawPhase === 'idle'}
                 />
               </View>
+
+              {/* Live validation */}
+              {(() => {
+                const d = parseFloat(dose);
+                const t = parseFloat(targetTime);
+                if (isNaN(d) || isNaN(t) || d <= 0 || t <= 0) return null;
+
+                const f = (d * 60) / t; // mL/min from mL and seconds
+                const issues = [];
+                if (d < MIN_DRAW_VOL) issues.push(`Dose below min draw (${MIN_DRAW_VOL} mL)`);
+                if (d > MAX_DRAW_VOL) issues.push(`Dose above syringe capacity (${MAX_DRAW_VOL} mL)`);
+                if (f < MIN_FLOW_ML_MIN) issues.push(`Required flow ${f.toFixed(2)} mL/min is too slow (min ${MIN_FLOW_ML_MIN})`);
+                if (f > MAX_FLOW_ML_MIN) issues.push(`Required flow ${f.toFixed(2)} mL/min is too fast (max ${MAX_FLOW_ML_MIN})`);
+
+                return (
+                  <View style={[styles.validationBox, issues.length > 0 ? styles.validationBad : styles.validationGood]}>
+                    <Ionicons
+                      name={issues.length > 0 ? 'alert-circle' : 'checkmark-circle'}
+                      size={18}
+                      color={colors.white}
+                      style={{ marginRight: 8 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      {issues.length > 0 ? (
+                        issues.map((msg, i) => (
+                          <Text key={i} style={styles.validationText}>{msg}</Text>
+                        ))
+                      ) : (
+                        <Text style={styles.validationText}>
+                          Required flow: {f.toFixed(2)} mL/min — within range
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                );
+              })()}
             </>
           )}
         </View>
@@ -254,18 +286,124 @@ export default function ControlScreen({ navigation }) {
           </View>
         </View>
 
-        <TouchableOpacity 
-          style={[styles.startBtn, isInfusing && styles.startBtnActive]} 
-          onPress={handleStart}
-          disabled={isInfusing || timeRemaining <= 0}
-        >
-          <Ionicons name={isInfusing ? "pulse" : "play"} size={20} color={colors.white} style={{marginRight: 10}}/>
-          <Text style={styles.startText}>{isInfusing ? "Infusion Running..." : "Send & Start"}</Text>
-        </TouchableOpacity>
+        {mode === 'Option1' ? (
+          <TouchableOpacity 
+            style={[styles.startBtn, isInfusing && styles.startBtnActive]} 
+            onPress={handleStart}
+            disabled={isInfusing || timeRemaining <= 0}
+          >
+            <Ionicons name={isInfusing ? "pulse" : "play"} size={20} color={colors.white} style={{marginRight: 10}}/>
+            <Text style={styles.startText}>{isInfusing ? "Infusion Running..." : "Send & Start"}</Text>
+          </TouchableOpacity>
+        ) : (
+          <DoseTimeStepper
+            dose={dose}
+            targetTime={targetTime}
+            calculatedFlowRate={calculatedFlowRate}
+            timeRemaining={timeRemaining}
+            isInfusing={isInfusing}
+            drawPhase={drawPhase}
+            drawingActive={drawingActive}
+            lastDrawVol={lastDrawVol}
+            startDraw={startDraw}
+            cancelDraw={cancelDraw}
+            resetDrawPhase={resetDrawPhase}
+            handleStart={handleStart}
+          />
+        )}
         
         <View style={{ height: 50 }} />
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+// ── Dose & Time stepper component ───────────────────────────────
+function DoseTimeStepper({
+  dose, targetTime, calculatedFlowRate, timeRemaining, isInfusing,
+  drawPhase, drawingActive, lastDrawVol,
+  startDraw, cancelDraw, resetDrawPhase, handleStart,
+}) {
+  const d = parseFloat(dose);
+  const t = parseFloat(targetTime); // seconds
+  const f = (!isNaN(d) && !isNaN(t) && d > 0 && t > 0) ? (d * 60) / t : 0;
+
+  const validInputs =
+    !isNaN(d) && !isNaN(t) &&
+    d >= MIN_DRAW_VOL && d <= MAX_DRAW_VOL &&
+    f >= MIN_FLOW_ML_MIN && f <= MAX_FLOW_ML_MIN;
+
+  const onDrawPress = () => {
+    Alert.alert(
+      'Confirm Draw',
+      `Make sure the syringe tip is submerged in water. ${d.toFixed(2)} mL will be drawn at PWM 255 reverse.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Start Draw', onPress: async () => {
+            const res = await startDraw(d);
+            if (!res.ok) Alert.alert('Draw Failed', res.reason);
+          }
+        },
+      ],
+    );
+  };
+
+  // Phase: idle → show Draw button
+  if (drawPhase === 'idle') {
+    return (
+      <TouchableOpacity
+        style={[styles.startBtn, !validInputs && styles.startBtnDisabled]}
+        onPress={onDrawPress}
+        disabled={!validInputs}
+      >
+        <Ionicons name="arrow-down-circle" size={20} color={colors.white} style={{ marginRight: 10 }} />
+        <Text style={styles.startText}>Step 1: Draw {validInputs ? d.toFixed(2) : '--'} mL</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  // Phase: drawing → show progress + cancel
+  if (drawPhase === 'drawing' || drawingActive) {
+    return (
+      <View style={styles.phaseCard}>
+        <Ionicons name="sync" size={28} color={colors.accent} style={{ marginBottom: 8 }} />
+        <Text style={styles.phaseTitle}>Drawing {d.toFixed(2)} mL…</Text>
+        <Text style={styles.phaseSub}>Reverse motor running at PWM 255</Text>
+        <TouchableOpacity style={styles.cancelBtn} onPress={cancelDraw}>
+          <Ionicons name="close-circle" size={18} color={colors.white} style={{ marginRight: 6 }} />
+          <Text style={styles.cancelText}>Cancel Draw</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Phase: ready → show start infusion button
+  if (drawPhase === 'ready') {
+    return (
+      <View style={{ width: '100%' }}>
+        <View style={styles.phaseCard}>
+          <Ionicons name="checkmark-circle" size={28} color={colors.success ?? '#27ae60'} style={{ marginBottom: 8 }} />
+          <Text style={styles.phaseTitle}>Draw Complete</Text>
+          <Text style={styles.phaseSub}>{lastDrawVol.toFixed(2)} mL loaded</Text>
+        </View>
+        <TouchableOpacity style={styles.startBtn} onPress={handleStart} disabled={timeRemaining <= 0}>
+          <Ionicons name="play" size={20} color={colors.white} style={{ marginRight: 10 }} />
+          <Text style={styles.startText}>Step 2: Start Infusion ({f.toFixed(2)} mL/min)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.cancelBtn, { alignSelf: 'center', marginTop: 10 }]} onPress={resetDrawPhase}>
+          <Ionicons name="refresh" size={16} color={colors.white} style={{ marginRight: 6 }} />
+          <Text style={styles.cancelText}>Reset</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Phase: infusing — handled by TimerScreen, but show a status here too
+  return (
+    <TouchableOpacity style={[styles.startBtn, styles.startBtnActive]} disabled>
+      <Ionicons name="pulse" size={20} color={colors.white} style={{ marginRight: 10 }} />
+      <Text style={styles.startText}>Infusion Running…</Text>
+    </TouchableOpacity>
   );
 }
 
@@ -327,4 +465,15 @@ const styles = StyleSheet.create({
   activeStop: { backgroundColor: colors.danger },
 
   activeText: { color: colors.white },
+
+  // Dose & Time validation + phase UI
+  validationBox: { flexDirection: 'row', alignItems: 'center', padding: 10, borderRadius: 10, marginTop: 5 },
+  validationGood: { backgroundColor: colors.success ?? '#27ae60' },
+  validationBad: { backgroundColor: colors.danger },
+  validationText: { color: colors.white, fontSize: 12, fontWeight: '600' },
+  phaseCard: { width: '100%', backgroundColor: colors.surface, padding: 20, borderRadius: 15, alignItems: 'center', marginBottom: 15, borderWidth: 1, borderColor: colors.border },
+  phaseTitle: { fontSize: 18, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 4 },
+  phaseSub: { fontSize: 13, color: colors.textSecondary, marginBottom: 12 },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.danger, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 12 },
+  cancelText: { color: colors.white, fontWeight: 'bold', fontSize: 14 },
 });

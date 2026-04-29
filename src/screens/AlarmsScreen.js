@@ -13,12 +13,13 @@ export default function AlarmsScreen({ navigation }) {
     alarmActive,
     esp32FlowRate,
     syringeEmpty,
+    occlusionDetected,
   } = useContext(AppContext);
 
   // Pulsing animation for active alarms
   const pulseAnim = new Animated.Value(1);
   useEffect(() => {
-    if (syringeEmpty || (!esp32Connected && isInfusing)) {
+    if (syringeEmpty || occlusionDetected || (!esp32Connected && isInfusing)) {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { toValue: 1.04, duration: 600, useNativeDriver: true }),
@@ -26,9 +27,25 @@ export default function AlarmsScreen({ navigation }) {
         ])
       ).start();
     }
-  }, [syringeEmpty, esp32Connected, isInfusing]);
+  }, [syringeEmpty, occlusionDetected, esp32Connected, isInfusing]);
 
   const alarms = [
+    {
+      id: 'occlusion',
+      title: 'Occlusion Detected',
+      icon: 'alert-circle',
+      desc: 'Flow dropped suddenly while infusing. Check for blockage.',
+      active: occlusionDetected,
+      detail: occlusionDetected ? 'Flow sensor detected near-zero pulses for 3 consecutive seconds — motor stopped for safety.' : null,
+    },
+    {
+      id: 'empty',
+      title: 'Syringe Empty',
+      icon: 'medical',
+      desc: 'Plunger reached end. Replace syringe.',
+      active: syringeEmpty,
+      detail: syringeEmpty ? 'Hardware limit switch triggered — motor stopped.' : null,
+    },
     {
       id: 'connection',
       title: 'ESP32 Connection Lost',
@@ -38,14 +55,6 @@ export default function AlarmsScreen({ navigation }) {
       detail: !esp32Connected && isInfusing
         ? 'Check WiFi and verify ESP32 IP in esp32Service.js'
         : null,
-    },
-    {
-      id: 'empty',
-      title: 'Syringe Empty',
-      icon: 'medical',
-      desc: 'Plunger reached end. Replace syringe.',
-      active: syringeEmpty,
-      detail: syringeEmpty ? 'Hardware limit switch triggered — motor stopped.' : null,
     },
   ];
 
@@ -79,7 +88,7 @@ export default function AlarmsScreen({ navigation }) {
         </View>
 
         {/* Dismiss button for active alarms */}
-        {item.id === 'empty' && item.active && (
+        {(item.id === 'empty' || item.id === 'occlusion') && item.active && (
           <TouchableOpacity style={styles.dismissBtn} onPress={handleDismiss}>
             <Ionicons name="refresh" size={18} color={colors.danger} style={{ marginRight: 6 }} />
             <Text style={styles.dismissText}>Reset & Resume</Text>

@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 
 export default function GlobalAlarmHandler() {
-  const { alarmActive, syringeEmpty, dismissAlarm } = useContext(AppContext);
+  const { alarmActive, syringeEmpty, occlusionDetected, dismissAlarm } = useContext(AppContext);
   const soundRef = useRef(null);
 
   useEffect(() => {
@@ -75,15 +75,21 @@ export default function GlobalAlarmHandler() {
             <View style={styles.textContainer}>
               <Text style={styles.title}>CRITICAL ALARM</Text>
               <Text style={styles.subtitle}>
-                {syringeEmpty ? 'SYRINGE EMPTY / STOP TRIGGERED' : 'INFUSION COMPLETE'}
+                {occlusionDetected
+                  ? 'OCCLUSION DETECTED'
+                  : syringeEmpty
+                  ? 'SYRINGE EMPTY / STOP TRIGGERED'
+                  : 'INFUSION COMPLETE'}
               </Text>
             </View>
           </View>
 
           <View style={styles.detailsContainer}>
              <Text style={styles.detailsText}>
-               {syringeEmpty 
-                 ? 'The hardware limit switch has been triggered. The system has stopped for safety.' 
+               {occlusionDetected
+                 ? 'Flow dropped to near-zero while the pump was running. Check the tube for kinks, clamps, or blockages, then reset to resume.'
+                 : syringeEmpty
+                 ? 'The hardware limit switch has been triggered. The system has stopped for safety.'
                  : 'The target volume has been delivered or the timer has finished.'}
              </Text>
           </View>
